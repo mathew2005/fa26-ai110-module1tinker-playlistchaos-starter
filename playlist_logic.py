@@ -4,9 +4,7 @@ from typing import Dict, List, Optional, Tuple
 Song = Dict[str, object]
 PlaylistMap = Dict[str, List[Song]]
 
-# REFACTOR: the three mood labels were spelled out separately in
-# build_playlists, compute_playlist_stats, lucky_pick and history_summary.
-# One tuple keeps them consistent and makes the iteration order explicit.
+# One place for the mood names; they used to be repeated in four functions.
 MOOD_LABELS = ("Hype", "Chill", "Mixed")
 
 DEFAULT_PROFILE = {
@@ -29,9 +27,8 @@ def normalize_artist(artist: str) -> str:
     """Normalize an artist name for display and comparison."""
     if not artist:
         return ""
-    # FIX: this lower-cased the stored value, so every playlist row rendered
-    # "ac/dc" and "the weeknd". Search and artist counting lower-case at the
-    # point of comparison, so storage only needs whitespace stripped.
+    # FIX: this used to lowercase, so the UI showed "ac/dc". Comparisons
+    # lowercase where they happen, so only stripping is needed here.
     return artist.strip()
 
 
@@ -79,26 +76,21 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
     hype_keywords = ["rock", "punk", "party"]
     chill_keywords = ["lofi", "ambient", "sleep"]
 
-    # FIX: the chill keywords were matched against the *title*, but they name
-    # genres and tags ("lofi", "ambient", "sleep") -- so "Soft Piano" could
-    # never match one. Match both keyword sets against genre and tags.
+    # FIX: chill keywords were matched against the title, but they name genres
+    # and tags, so they never fired. Check genre and tags instead.
     signals = [genre] + [str(tag).lower() for tag in tags]
     is_hype_keyword = any(k in s for k in hype_keywords for s in signals)
     is_chill_keyword = any(k in s for k in chill_keywords for s in signals)
 
-    # FIX: precedence was wrong. `genre == favorite_genre` and the hype keywords
-    # short-circuited to Hype before any chill check ran, so a calm song in your
-    # favorite genre -- or any rock song at energy 1 -- came back Hype. The
-    # profile's energy thresholds are its explicit statement of intent, so they
-    # decide first. (If the two ranges overlap, Hype wins; documented, not
-    # accidental.)
+    # FIX: the Hype branch ran first and included favorite genre, so a rock
+    # song at energy 1 came back Hype. Energy thresholds decide first now.
+    # If the profile's ranges overlap, Hype wins.
     if energy >= hype_min_energy:
         return "Hype"
     if energy <= chill_max_energy:
         return "Chill"
 
-    # Only songs the thresholds left undecided fall through to genre/tag
-    # signals. Favorite genre is a nudge here, never an override.
+    # Middle energies only: favorite genre nudges, it doesn't override.
     if is_chill_keyword:
         return "Chill"
     if is_hype_keyword or genre == favorite_genre:
@@ -108,9 +100,8 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
 
 def collect_songs(playlists: PlaylistMap) -> List[Song]:
     """Return every song across all playlists, in a stable order."""
-    # REFACTOR: three call sites each flattened the playlist map by hand.
-    # Known moods come first in a fixed order, then any extra keys a merge
-    # introduced, so the result is deterministic.
+    # Three call sites used to flatten the map by hand. Fixed order, so extra
+    # keys from a merge still land somewhere predictable.
     songs: List[Song] = []
     for label in MOOD_LABELS:
         songs.extend(playlists.get(label, []))
@@ -136,14 +127,11 @@ def build_playlists(songs: List[Song], profile: Dict[str, object]) -> PlaylistMa
 def merge_playlists(a: PlaylistMap, b: PlaylistMap) -> PlaylistMap:
     """Merge two playlist maps into a new map."""
     merged: PlaylistMap = {}
-    # FIX: iterating a set() of the keys produced an arbitrary order, so the
-    # merged map's key order changed between runs. Keep a's order, then append
-    # any keys only b has.
+    # FIX: set() iteration gave the merged map a different key order each run.
     keys = list(a.keys()) + [key for key in b.keys() if key not in a]
     for key in keys:
-        # FIX: `merged[key] = a.get(key, [])` stored a reference to a's own
-        # list, so extending it mutated the caller's playlists in place -- a
-        # merge could duplicate songs into the source map. Copy first.
+        # FIX: this used to store a reference to a's list, so extending it
+        # mutated the caller's playlists. Copy first.
         merged[key] = list(a.get(key, []))
         merged[key].extend(b.get(key, []))
     return merged
@@ -155,9 +143,7 @@ def compute_playlist_stats(playlists: PlaylistMap) -> Dict[str, object]:
     total = len(all_songs)
     counts = {label: len(playlists.get(label, [])) for label in MOOD_LABELS}
 
-    # Both figures are measured over every song (see the ratio/average fixes):
-    # hype_ratio is Hype out of all songs, and avg_energy averages the same set
-    # it divides by.
+    # Both figures cover every song, not just the Hype ones.
     total_energy = sum(float(song.get("energy", 0) or 0) for song in all_songs)
     top_artist, top_count = most_common_artist(all_songs)
 
@@ -181,8 +167,8 @@ def most_common_artist(songs: List[Song]) -> Tuple[str, int]:
         artist = str(song.get("artist", "")).strip()
         if not artist:
             continue
-        # FIX: group case-insensitively so "AC/DC" and "ac/dc" count as one
-        # artist, but keep the first spelling seen for display.
+        # FIX: "AC/DC" and "ac/dc" used to count as two artists. Group on the
+        # lowercase key, display the first spelling seen.
         key = artist.lower()
         counts[key] = counts.get(key, 0) + 1
         display.setdefault(key, artist)
@@ -190,8 +176,7 @@ def most_common_artist(songs: List[Song]) -> Tuple[str, int]:
     if not counts:
         return "", 0
 
-    # FIX: sorting by count alone left ties broken by insertion order. Tie-break
-    # on the name so the top artist is deterministic run to run.
+    # FIX: sorting by count alone left ties to insertion order. Break on name.
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     top_key, top_count = ranked[0]
     return display[top_key], top_count
@@ -211,10 +196,8 @@ def search_songs(
 
     for song in songs:
         value = str(song.get(field, "")).lower()
-        # FIX: the containment test was reversed (`value in q`), so a song only
-        # matched when its entire field was a substring of the query. Searching
-        # "AC" could never find "AC/DC". Check for the query inside the value so
-        # matching is partial and case-insensitive, per the spec.
+        # FIX: this was `value in q`, which asks whether the artist is inside
+        # the query -- backwards, so "AC" never matched "AC/DC".
         if q in value:
             filtered.append(song)
 
@@ -231,8 +214,7 @@ def lucky_pick(
     elif mode == "chill":
         songs = playlists.get("Chill", [])
     else:
-        # "any" means any playlist -- it previously drew from Hype + Chill only,
-        # leaving Mixed songs unreachable.
+        # FIX: "any" used to be Hype + Chill, so Mixed was unreachable.
         songs = collect_songs(playlists)
 
     return random_choice_or_none(songs)
@@ -240,9 +222,8 @@ def lucky_pick(
 
 def random_choice_or_none(songs: List[Song]) -> Optional[Song]:
     """Return a random song, or None when there is nothing to pick from."""
-    # FIX: random.choice raises IndexError on an empty list, so choosing Hype
-    # with no Hype songs crashed the app. The function name already promised
-    # None for the empty case -- now it actually returns it.
+    # FIX: random.choice raises IndexError on an empty list, so picking Hype
+    # with no Hype songs crashed the app.
     if not songs:
         return None
     return random.choice(songs)
@@ -253,6 +234,6 @@ def history_summary(history: List[Song]) -> Dict[str, int]:
     counts = {label: 0 for label in MOOD_LABELS}
     for song in history:
         mood = song.get("mood", "Mixed")
-        # An unrecognized mood counts as Mixed rather than being dropped.
+        # Unknown moods count as Mixed rather than being dropped.
         counts[mood if mood in counts else "Mixed"] += 1
     return counts

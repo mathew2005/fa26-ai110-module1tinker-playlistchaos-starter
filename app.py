@@ -194,9 +194,8 @@ def profile_sidebar():
         value=str(profile.get("name", "")),
     )
 
-    # FIX: these sliders were wrapped in `with col1:` / `with col2:` but called
-    # st.sidebar.slider, which always renders in the sidebar root -- the columns
-    # did nothing. Dropped the dead layout instead of pretending it worked.
+    # FIX: these were wrapped in st.sidebar.columns but called
+    # st.sidebar.slider, so the columns did nothing. Dropped the dead layout.
     profile["hype_min_energy"] = st.sidebar.slider(
         "Hype min energy",
         min_value=1,
@@ -210,9 +209,7 @@ def profile_sidebar():
         value=int(profile.get("chill_max_energy", 3)),
     )
 
-    # FIX: an overlapping range (chill max >= hype min) leaves songs in the
-    # overlap ambiguous. classify_song resolves it as Hype; say so out loud
-    # rather than letting the user guess.
+    # Overlapping ranges are ambiguous; classify_song calls them Hype, so say so.
     if profile["chill_max_energy"] >= profile["hype_min_energy"]:
         st.sidebar.warning(
             "Chill max energy is not below Hype min energy, so songs in the "
@@ -221,8 +218,7 @@ def profile_sidebar():
 
     genre_options = ["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"]
     current_genre = str(profile.get("favorite_genre", "rock"))
-    # FIX: index was hard-coded to 0, so the control ignored the favorite genre
-    # already stored in the profile.
+    # FIX: index was hard-coded to 0, ignoring the profile's stored genre.
     profile["favorite_genre"] = st.sidebar.selectbox(
         "Favorite genre",
         options=genre_options,
@@ -261,8 +257,7 @@ def add_song_sidebar():
             "energy": energy,
             "tags": tags,
         }
-        # FIX: a blank title or artist silently did nothing, so the button
-        # looked broken. Report what is missing, and confirm on success.
+        # FIX: a blank field silently did nothing, so the button looked broken.
         if not title.strip() or not artist.strip():
             st.sidebar.warning("Title and artist are both required.")
             return

@@ -1,11 +1,7 @@
 """Regression tests for the Playlist Chaos fixes.
 
-Plain asserts, no test framework required:
-
-    python test_playlist_logic.py
-
-Each test names the behavior from the spec that used to be broken, so a future
-change that reintroduces one of these bugs fails loudly.
+Plain asserts, no test framework needed:  python test_playlist_logic.py
+Each test covers one behavior that used to be broken.
 """
 
 import random
