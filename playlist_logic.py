@@ -133,13 +133,18 @@ def compute_playlist_stats(playlists: PlaylistMap) -> Dict[str, object]:
     chill = playlists.get("Chill", [])
     mixed = playlists.get("Mixed", [])
 
-    total = len(hype)
+    # FIX: `total` was len(hype), so hype_ratio was len(hype)/len(hype) == 1.00
+    # for any non-empty library. The ratio is Hype songs out of *all* songs.
+    total = len(all_songs)
     hype_ratio = len(hype) / total if total > 0 else 0.0
 
     avg_energy = 0.0
-    if all_songs:
-        total_energy = sum(song.get("energy", 0) for song in hype)
-        avg_energy = total_energy / len(all_songs)
+    if total > 0:
+        # FIX: the numerator summed energy over `hype` only while the
+        # denominator counted every song, so adding low-energy songs pulled the
+        # average down twice. Average over the same set we divide by.
+        total_energy = sum(float(song.get("energy", 0) or 0) for song in all_songs)
+        avg_energy = total_energy / total
 
     top_artist, top_count = most_common_artist(all_songs)
 
@@ -158,17 +163,25 @@ def compute_playlist_stats(playlists: PlaylistMap) -> Dict[str, object]:
 def most_common_artist(songs: List[Song]) -> Tuple[str, int]:
     """Return the most common artist and count."""
     counts: Dict[str, int] = {}
+    display: Dict[str, str] = {}
     for song in songs:
-        artist = str(song.get("artist", ""))
+        artist = str(song.get("artist", "")).strip()
         if not artist:
             continue
-        counts[artist] = counts.get(artist, 0) + 1
+        # FIX: group case-insensitively so "AC/DC" and "ac/dc" count as one
+        # artist, but keep the first spelling seen for display.
+        key = artist.lower()
+        counts[key] = counts.get(key, 0) + 1
+        display.setdefault(key, artist)
 
     if not counts:
         return "", 0
 
-    items = sorted(counts.items(), key=lambda item: item[1], reverse=True)
-    return items[0]
+    # FIX: sorting by count alone left ties broken by insertion order. Tie-break
+    # on the name so the top artist is deterministic run to run.
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    top_key, top_count = ranked[0]
+    return display[top_key], top_count
 
 
 def search_songs(
