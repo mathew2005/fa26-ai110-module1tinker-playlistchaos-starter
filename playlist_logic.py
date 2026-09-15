@@ -118,8 +118,15 @@ def build_playlists(songs: List[Song], profile: Dict[str, object]) -> PlaylistMa
 def merge_playlists(a: PlaylistMap, b: PlaylistMap) -> PlaylistMap:
     """Merge two playlist maps into a new map."""
     merged: PlaylistMap = {}
-    for key in set(list(a.keys()) + list(b.keys())):
-        merged[key] = a.get(key, [])
+    # FIX: iterating a set() of the keys produced an arbitrary order, so the
+    # merged map's key order changed between runs. Keep a's order, then append
+    # any keys only b has.
+    keys = list(a.keys()) + [key for key in b.keys() if key not in a]
+    for key in keys:
+        # FIX: `merged[key] = a.get(key, [])` stored a reference to a's own
+        # list, so extending it mutated the caller's playlists in place -- a
+        # merge could duplicate songs into the source map. Copy first.
+        merged[key] = list(a.get(key, []))
         merged[key].extend(b.get(key, []))
     return merged
 
