@@ -21,10 +21,13 @@ def normalize_title(title: str) -> str:
 
 
 def normalize_artist(artist: str) -> str:
-    """Normalize an artist name for comparisons."""
+    """Normalize an artist name for display and comparison."""
     if not artist:
         return ""
-    return artist.strip().lower()
+    # FIX: this lower-cased the stored value, so every playlist row rendered
+    # "ac/dc" and "the weeknd". Search and artist counting lower-case at the
+    # point of comparison, so storage only needs whitespace stripped.
+    return artist.strip()
 
 
 def normalize_genre(genre: str) -> str:
