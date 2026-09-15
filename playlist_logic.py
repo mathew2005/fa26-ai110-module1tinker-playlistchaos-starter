@@ -61,7 +61,7 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
     """Return a mood label given a song and user profile."""
     energy = song.get("energy", 0)
     genre = song.get("genre", "")
-    title = song.get("title", "")
+    tags = song.get("tags", []) or []
 
     hype_min_energy = profile.get("hype_min_energy", 7)
     chill_max_energy = profile.get("chill_max_energy", 3)
@@ -70,13 +70,30 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
     hype_keywords = ["rock", "punk", "party"]
     chill_keywords = ["lofi", "ambient", "sleep"]
 
-    is_hype_keyword = any(k in genre for k in hype_keywords)
-    is_chill_keyword = any(k in title for k in chill_keywords)
+    # FIX: the chill keywords were matched against the *title*, but they name
+    # genres and tags ("lofi", "ambient", "sleep") -- so "Soft Piano" could
+    # never match one. Match both keyword sets against genre and tags.
+    signals = [genre] + [str(tag).lower() for tag in tags]
+    is_hype_keyword = any(k in s for k in hype_keywords for s in signals)
+    is_chill_keyword = any(k in s for k in chill_keywords for s in signals)
 
-    if genre == favorite_genre or energy >= hype_min_energy or is_hype_keyword:
+    # FIX: precedence was wrong. `genre == favorite_genre` and the hype keywords
+    # short-circuited to Hype before any chill check ran, so a calm song in your
+    # favorite genre -- or any rock song at energy 1 -- came back Hype. The
+    # profile's energy thresholds are its explicit statement of intent, so they
+    # decide first. (If the two ranges overlap, Hype wins; documented, not
+    # accidental.)
+    if energy >= hype_min_energy:
         return "Hype"
-    if energy <= chill_max_energy or is_chill_keyword:
+    if energy <= chill_max_energy:
         return "Chill"
+
+    # Only songs the thresholds left undecided fall through to genre/tag
+    # signals. Favorite genre is a nudge here, never an override.
+    if is_chill_keyword:
+        return "Chill"
+    if is_hype_keyword or genre == favorite_genre:
+        return "Hype"
     return "Mixed"
 
 
