@@ -194,26 +194,39 @@ def profile_sidebar():
         value=str(profile.get("name", "")),
     )
 
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        profile["hype_min_energy"] = st.sidebar.slider(
-            "Hype min energy",
-            min_value=1,
-            max_value=10,
-            value=int(profile.get("hype_min_energy", 7)),
-        )
-    with col2:
-        profile["chill_max_energy"] = st.sidebar.slider(
-            "Chill max energy",
-            min_value=1,
-            max_value=10,
-            value=int(profile.get("chill_max_energy", 3)),
+    # FIX: these sliders were wrapped in `with col1:` / `with col2:` but called
+    # st.sidebar.slider, which always renders in the sidebar root -- the columns
+    # did nothing. Dropped the dead layout instead of pretending it worked.
+    profile["hype_min_energy"] = st.sidebar.slider(
+        "Hype min energy",
+        min_value=1,
+        max_value=10,
+        value=int(profile.get("hype_min_energy", 7)),
+    )
+    profile["chill_max_energy"] = st.sidebar.slider(
+        "Chill max energy",
+        min_value=1,
+        max_value=10,
+        value=int(profile.get("chill_max_energy", 3)),
+    )
+
+    # FIX: an overlapping range (chill max >= hype min) leaves songs in the
+    # overlap ambiguous. classify_song resolves it as Hype; say so out loud
+    # rather than letting the user guess.
+    if profile["chill_max_energy"] >= profile["hype_min_energy"]:
+        st.sidebar.warning(
+            "Chill max energy is not below Hype min energy, so songs in the "
+            "overlap are classified as Hype."
         )
 
+    genre_options = ["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"]
+    current_genre = str(profile.get("favorite_genre", "rock"))
+    # FIX: index was hard-coded to 0, so the control ignored the favorite genre
+    # already stored in the profile.
     profile["favorite_genre"] = st.sidebar.selectbox(
         "Favorite genre",
-        options=["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"],
-        index=0,
+        options=genre_options,
+        index=genre_options.index(current_genre) if current_genre in genre_options else 0,
     )
 
     profile["include_mixed"] = st.sidebar.checkbox(
@@ -248,11 +261,19 @@ def add_song_sidebar():
             "energy": energy,
             "tags": tags,
         }
-        if title and artist:
-            normalized = normalize_song(song)
-            all_songs = st.session_state.songs[:]
-            all_songs.append(normalized)
-            st.session_state.songs = all_songs
+        # FIX: a blank title or artist silently did nothing, so the button
+        # looked broken. Report what is missing, and confirm on success.
+        if not title.strip() or not artist.strip():
+            st.sidebar.warning("Title and artist are both required.")
+            return
+
+        normalized = normalize_song(song)
+        all_songs = st.session_state.songs[:]
+        all_songs.append(normalized)
+        st.session_state.songs = all_songs
+        st.sidebar.success(
+            f"Added {normalized['title']} by {normalized['artist']}."
+        )
 
 
 def playlist_tabs(playlists):
