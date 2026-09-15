@@ -4,6 +4,11 @@ from typing import Dict, List, Optional, Tuple
 Song = Dict[str, object]
 PlaylistMap = Dict[str, List[Song]]
 
+# REFACTOR: the three mood labels were spelled out separately in
+# build_playlists, compute_playlist_stats, lucky_pick and history_summary.
+# One tuple keeps them consistent and makes the iteration order explicit.
+MOOD_LABELS = ("Hype", "Chill", "Mixed")
+
 DEFAULT_PROFILE = {
     "name": "Default",
     "hype_min_energy": 7,
@@ -101,13 +106,23 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
     return "Mixed"
 
 
+def collect_songs(playlists: PlaylistMap) -> List[Song]:
+    """Return every song across all playlists, in a stable order."""
+    # REFACTOR: three call sites each flattened the playlist map by hand.
+    # Known moods come first in a fixed order, then any extra keys a merge
+    # introduced, so the result is deterministic.
+    songs: List[Song] = []
+    for label in MOOD_LABELS:
+        songs.extend(playlists.get(label, []))
+    for label in playlists:
+        if label not in MOOD_LABELS:
+            songs.extend(playlists[label])
+    return songs
+
+
 def build_playlists(songs: List[Song], profile: Dict[str, object]) -> PlaylistMap:
     """Group songs into playlists based on mood and profile."""
-    playlists: PlaylistMap = {
-        "Hype": [],
-        "Chill": [],
-        "Mixed": [],
-    }
+    playlists: PlaylistMap = {label: [] for label in MOOD_LABELS}
 
     for song in songs:
         normalized = normalize_song(song)
@@ -136,36 +151,23 @@ def merge_playlists(a: PlaylistMap, b: PlaylistMap) -> PlaylistMap:
 
 def compute_playlist_stats(playlists: PlaylistMap) -> Dict[str, object]:
     """Compute statistics across all playlists."""
-    all_songs: List[Song] = []
-    for songs in playlists.values():
-        all_songs.extend(songs)
-
-    hype = playlists.get("Hype", [])
-    chill = playlists.get("Chill", [])
-    mixed = playlists.get("Mixed", [])
-
-    # FIX: `total` was len(hype), so hype_ratio was len(hype)/len(hype) == 1.00
-    # for any non-empty library. The ratio is Hype songs out of *all* songs.
+    all_songs = collect_songs(playlists)
     total = len(all_songs)
-    hype_ratio = len(hype) / total if total > 0 else 0.0
+    counts = {label: len(playlists.get(label, [])) for label in MOOD_LABELS}
 
-    avg_energy = 0.0
-    if total > 0:
-        # FIX: the numerator summed energy over `hype` only while the
-        # denominator counted every song, so adding low-energy songs pulled the
-        # average down twice. Average over the same set we divide by.
-        total_energy = sum(float(song.get("energy", 0) or 0) for song in all_songs)
-        avg_energy = total_energy / total
-
+    # Both figures are measured over every song (see the ratio/average fixes):
+    # hype_ratio is Hype out of all songs, and avg_energy averages the same set
+    # it divides by.
+    total_energy = sum(float(song.get("energy", 0) or 0) for song in all_songs)
     top_artist, top_count = most_common_artist(all_songs)
 
     return {
-        "total_songs": len(all_songs),
-        "hype_count": len(hype),
-        "chill_count": len(chill),
-        "mixed_count": len(mixed),
-        "hype_ratio": hype_ratio,
-        "avg_energy": avg_energy,
+        "total_songs": total,
+        "hype_count": counts["Hype"],
+        "chill_count": counts["Chill"],
+        "mixed_count": counts["Mixed"],
+        "hype_ratio": counts["Hype"] / total if total > 0 else 0.0,
+        "avg_energy": total_energy / total if total > 0 else 0.0,
         "top_artist": top_artist,
         "top_artist_count": top_count,
     }
@@ -229,13 +231,9 @@ def lucky_pick(
     elif mode == "chill":
         songs = playlists.get("Chill", [])
     else:
-        # FIX: "any" drew from Hype + Chill only, so a Mixed song could never be
-        # picked even though it is part of the library.
-        songs = (
-            playlists.get("Hype", [])
-            + playlists.get("Chill", [])
-            + playlists.get("Mixed", [])
-        )
+        # "any" means any playlist -- it previously drew from Hype + Chill only,
+        # leaving Mixed songs unreachable.
+        songs = collect_songs(playlists)
 
     return random_choice_or_none(songs)
 
@@ -252,11 +250,9 @@ def random_choice_or_none(songs: List[Song]) -> Optional[Song]:
 
 def history_summary(history: List[Song]) -> Dict[str, int]:
     """Return a summary of moods seen in the history."""
-    counts = {"Hype": 0, "Chill": 0, "Mixed": 0}
+    counts = {label: 0 for label in MOOD_LABELS}
     for song in history:
         mood = song.get("mood", "Mixed")
-        if mood not in counts:
-            counts["Mixed"] += 1
-        else:
-            counts[mood] += 1
+        # An unrecognized mood counts as Mixed rather than being dropped.
+        counts[mood if mood in counts else "Mixed"] += 1
     return counts
