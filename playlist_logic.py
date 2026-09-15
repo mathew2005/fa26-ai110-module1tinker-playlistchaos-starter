@@ -168,7 +168,11 @@ def search_songs(
 
     for song in songs:
         value = str(song.get(field, "")).lower()
-        if value and value in q:
+        # FIX: the containment test was reversed (`value in q`), so a song only
+        # matched when its entire field was a substring of the query. Searching
+        # "AC" could never find "AC/DC". Check for the query inside the value so
+        # matching is partial and case-insensitive, per the spec.
+        if q in value:
             filtered.append(song)
 
     return filtered
