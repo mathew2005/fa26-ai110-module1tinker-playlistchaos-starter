@@ -1,3 +1,4 @@
+import random
 from typing import Dict, List, Optional, Tuple
 
 Song = Dict[str, object]
@@ -218,15 +219,24 @@ def lucky_pick(
     elif mode == "chill":
         songs = playlists.get("Chill", [])
     else:
-        songs = playlists.get("Hype", []) + playlists.get("Chill", [])
+        # FIX: "any" drew from Hype + Chill only, so a Mixed song could never be
+        # picked even though it is part of the library.
+        songs = (
+            playlists.get("Hype", [])
+            + playlists.get("Chill", [])
+            + playlists.get("Mixed", [])
+        )
 
     return random_choice_or_none(songs)
 
 
 def random_choice_or_none(songs: List[Song]) -> Optional[Song]:
-    """Return a random song or None."""
-    import random
-
+    """Return a random song, or None when there is nothing to pick from."""
+    # FIX: random.choice raises IndexError on an empty list, so choosing Hype
+    # with no Hype songs crashed the app. The function name already promised
+    # None for the empty case -- now it actually returns it.
+    if not songs:
+        return None
     return random.choice(songs)
 
 
